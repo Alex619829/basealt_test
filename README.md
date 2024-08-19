@@ -10,5 +10,5 @@ After the end of the script you will see file "output.json" - it is the result o
 # Simple usage
 If you don`t want to install the program to your computer, you can just run the "main.pl" file from the project directory.
 # My notifications
-I was comparing all the packages by their architecture, as it was said in the task.
-The program process turned out to be very long. On my computer it lasts near 10 minutes. I think, that it is beacause of big size of data and multiple operations on them.
+* I was comparing all the packages by their architecture, as it was said in the task.
+* The program process turned out to be very long. On my computer it lasts near 10 minutes. I think, that it is beacause of big size of data and multiple operations on them.
