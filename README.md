@@ -3,8 +3,8 @@ It is a test task for Basealt SPO.
 This is a program that compares and sorts software packages from two different branches, according to the conditions defined in the task.
 # Installation
 If you want to install this program on your computer and use it from any directory, you can run the "install.sh" file from the project directory.
-*'sudo bash install.sh'
-*Warning! Be careful, if you dont have CPAN library, you should install it before.
+* 'sudo bash install.sh'
+* Warning! Be careful, if you dont have CPAN library, you should install it before.
 Then use from terminal whith a command: "basealt_script".
 After the end of the script you will see file "output.json" - it is the result of working the program.
 # Simple usage
