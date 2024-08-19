@@ -4,13 +4,14 @@ use warnings;
 use LWP::UserAgent;
 use HTTP::Request;
 use JSON;
-use Data::Dumper;
 
 
 main();
 
 
 sub main {
+
+    print("Script was started\nPlease, wait\n");
 
     my $sisyphusPackages = getAllPackages('sisyphus');
     my $p10Packages = getAllPackages('p10');
@@ -41,11 +42,21 @@ sub main {
         push @{$p10PackagesByArch{$package->{arch}}}, $packageInfo;
     }
 
-    inP10AndNotInSisyphus(\%sisyphusPackagesByArch, \%p10PackagesByArch);
+    my $inP10AndNotInSisyphusHash = inP10AndNotInSisyphus(\%sisyphusPackagesByArch, \%p10PackagesByArch);
 
-    inSisyphusAndNotInP10(\%sisyphusPackagesByArch, \%p10PackagesByArch);
+    my $inSisyphusAndNotInP10Hash = inSisyphusAndNotInP10(\%sisyphusPackagesByArch, \%p10PackagesByArch);
 
-    versionSisyphusIsUpper(\%sisyphusPackagesByArch, \%p10PackagesByArch);
+    my $versionSisyphusIsUpperHash = versionSisyphusIsUpper(\%sisyphusPackagesByArch, \%p10PackagesByArch);
+
+    my %resultHash = (
+        inP10AndNotInSisyphus => $inP10AndNotInSisyphusHash->{'inP10AndNotInSisyphus'},
+        inSisyphusAndNotInP10 => $inSisyphusAndNotInP10Hash->{'inSisyphusAndNotInP10'},
+        versionSisyphusIsUpper => $versionSisyphusIsUpperHash->{'versionSisyphusIsUpper'},
+    );
+
+    createJson(\%resultHash);
+
+    print("Script is off\n");
 
 }
 
@@ -61,7 +72,7 @@ sub getAllPackages {
     my $ua = LWP::UserAgent->new;
     my $response = $ua->request($request);
 
-    die "Ошибка запроса: ", $response->status_line unless $response->is_success;
+    die "Http error: ", $response->status_line unless $response->is_success;
 
     my $data = decode_json($response->content);
 
@@ -75,8 +86,12 @@ sub inP10AndNotInSisyphus {
     my %sisyphusPackagesByArch = %{shift()};
     my %p10PackagesByArch = %{shift()};
 
+    my %groupByAcrch;
+    my %inP10AndNotInSisyphusHash;
+
     foreach my $arch (keys %p10PackagesByArch) {
 
+        my @newPackageList;
         for my $p10Package (@{$p10PackagesByArch{$arch}}) {
 
             my $found = 0;
@@ -86,15 +101,19 @@ sub inP10AndNotInSisyphus {
                     last;
                 }
             }
-
-            if ($found) {
-                print "Пакет $p10Package->{'name'} существует в Sisyphus\n";
-            } else {
-                print "Пакет $p10Package->{'name'} отсутствует в Sisyphus\n";
+            if (!($found)) {
+                push @newPackageList, $p10Package;
             }
+
         };
 
+        $groupByAcrch{$arch} = \@newPackageList;
+
     }
+
+    $inP10AndNotInSisyphusHash{'inP10AndNotInSisyphus'} = \%groupByAcrch;
+
+    return \%inP10AndNotInSisyphusHash;
 
 }
 
@@ -104,8 +123,12 @@ sub inSisyphusAndNotInP10 {
     my %sisyphusPackagesByArch = %{shift()};
     my %p10PackagesByArch = %{shift()};
 
+    my %groupByAcrch;
+    my %inSisyphusAndNotInP10Hash;
+
     foreach my $arch (keys %sisyphusPackagesByArch) {
 
+        my @newPackageList;
         for my $sisyphusPackage (@{$sisyphusPackagesByArch{$arch}}) {
 
             my $found = 0;
@@ -116,14 +139,18 @@ sub inSisyphusAndNotInP10 {
                 }
             }
 
-            if ($found) {
-                print "Пакет $sisyphusPackage->{'name'} существует в p10\n";
-            } else {
-                print "Пакет $sisyphusPackage->{'name'} отсутствует в p10\n";
+            if (!($found)) {
+                push @newPackageList, $sisyphusPackage;
             }
         };
 
+        $groupByAcrch{$arch} = \@newPackageList;
+
     };
+
+    $inSisyphusAndNotInP10Hash{'inSisyphusAndNotInP10'} = \%groupByAcrch;
+
+    return \%inSisyphusAndNotInP10Hash;
 
 }
 
@@ -133,20 +160,38 @@ sub versionSisyphusIsUpper {
     my %sisyphusPackagesByArch = %{shift()};
     my %p10PackagesByArch = %{shift()};
 
+    my %groupByAcrch;
+    my %versionSisyphusIsUpperHash;
+
     foreach my $arch (keys %sisyphusPackagesByArch) {
 
+        my @newPackageList;
         for my $sisyphusPackage (@{$sisyphusPackagesByArch{$arch}}) {
 
             my $found = 0;
             for my $p10Package (@{$p10PackagesByArch{$arch}}) {
-                if (compareVersions($sisyphusPackage->{'version'}, $p10Package->{'version'})) {
-                    # Пакет подходит
-                };
+
+                if ($sisyphusPackage->{'name'} eq $p10Package->{'name'}) {
+                    if (compareVersions($sisyphusPackage->{'version'}, $p10Package->{'version'})) {
+                        $found = 1;
+                        last;
+                    };
+                }
+            }
+
+            if ($found) {
+                push @newPackageList, $sisyphusPackage;
             }
 
         }
 
+        $groupByAcrch{$arch} = \@newPackageList;
+
     }
+
+    $versionSisyphusIsUpperHash{'versionSisyphusIsUpper'} = \%groupByAcrch;
+
+    return \%versionSisyphusIsUpperHash;
 
 }
 
@@ -159,11 +204,19 @@ sub compareVersions {
     my @p10PackageVersionParts = split(/\./, $p10PackageVersion);
 
     foreach my $index (0 .. $#sisyphusPackageVersionParts) {
-        if ($sisyphusPackageVersionParts[$index] > $p10PackageVersionParts[$index]) {
-            return 1;
+
+        my $sisyphusPart = $sisyphusPackageVersionParts[$index];
+        my $p10Part = $p10PackageVersionParts[$index];
+
+        if (defined $p10Part && defined $sisyphusPart) {
+            $sisyphusPart =~ s/[^0-9]+//g;
+            $p10Part =~ s/[^0-9]+//g;
+
+            if ($sisyphusPart gt $p10Part) {
+                return 1;
+            }
         }
     }
-
 }
 
 
@@ -173,12 +226,9 @@ sub createJson {
 
     my $json = JSON->new->utf8->pretty->encode($hash);
 
-    my $file_name = 'output.json';
-    open(my $fh, '>', $file_name) or die "Could not open file '$file_name' $!";
+    my $fileName = 'output.json';
+    open(my $fh, '>', $fileName) or die "Could not open file '$fileName' $!";
     print $fh $json;
     close($fh);
 
 }
-
-
-
