@@ -13,45 +13,67 @@ sub main {
 
     print("Script was started\nPlease, wait\n");
 
-    my $sisyphusPackages = getAllPackages('sisyphus');
-    my $p10Packages = getAllPackages('p10');
+    my $firstBranch = $ARGV[0];
+    my $secondBranch = $ARGV[1];
+    my $arch = $ARGV[2];
+
+    my $firstBranchPackages = getAllPackages($firstBranch);
+    my $secondBranchPackages = getAllPackages($secondBranch);
 
 
-    my %sisyphusPackagesByArch;
+    my %firstBranchPackagesByArch;
 
-    foreach my $package (@{$sisyphusPackages->{packages}}) {
+    my $count = 0;
+    foreach my $package (@{$firstBranchPackages->{packages}}) {
 
-        my $packageInfo = {
-            name    => $package->{name},
-            version => $package->{version},
-        };
+        if ($package->{arch} eq $arch) {
+            my $packageInfo = {
+                name    => $package->{name},
+                version => $package->{version},
+            };
+            
+            push @{$firstBranchPackagesByArch{$arch}}, $packageInfo;
+            $count++;
+        }
 
-        push @{$sisyphusPackagesByArch{$package->{arch}}}, $packageInfo;
     }
 
-
-    my %p10PackagesByArch;
-
-    foreach my $package (@{$p10Packages->{packages}}) {
-
-        my $packageInfo = {
-            name    => $package->{name},
-            version => $package->{version},
-        };
-
-        push @{$p10PackagesByArch{$package->{arch}}}, $packageInfo;
+    if ($count == 0) {
+        print("No such arch '$arch' in '$firstBranch' branch!\n");
+        return;
     }
 
-    my $inP10AndNotInSisyphusHash = inP10AndNotInSisyphus(\%sisyphusPackagesByArch, \%p10PackagesByArch);
+    my %secondBranchPackagesByArch;
 
-    my $inSisyphusAndNotInP10Hash = inSisyphusAndNotInP10(\%sisyphusPackagesByArch, \%p10PackagesByArch);
+    $count = 0;
+    foreach my $package (@{$secondBranchPackages->{packages}}) {
 
-    my $versionSisyphusIsUpperHash = versionSisyphusIsUpper(\%sisyphusPackagesByArch, \%p10PackagesByArch);
+        if ($package->{arch} eq $arch) {
+            my $packageInfo = {
+                name    => $package->{name},
+                version => $package->{version},
+            };
+
+            push @{$secondBranchPackagesByArch{$arch}}, $packageInfo;
+            $count++;
+        }
+    }
+
+    if ($count == 0) {
+        print("No such arch '$arch' in '$secondBranch' branch!\n");
+        return;
+    }
+
+    my $inSecondBranchAndNotInFirstBranchHash = inSecondBranchAndNotInFirstBranch(\%firstBranchPackagesByArch, \%secondBranchPackagesByArch, $arch, $firstBranch, $secondBranch);
+
+    my $inFirstBranchAndNotInSecondBranchHash = inFirstBranchAndNotInSecondBranch(\%firstBranchPackagesByArch, \%secondBranchPackagesByArch, $arch, $firstBranch, $secondBranch);
+
+    my $versionFirstBranchIsUpperHash = versionFirstBranchIsUpper(\%firstBranchPackagesByArch, \%secondBranchPackagesByArch, $arch, $firstBranch);
 
     my %resultHash = (
-        inP10AndNotInSisyphus => $inP10AndNotInSisyphusHash->{'inP10AndNotInSisyphus'},
-        inSisyphusAndNotInP10 => $inSisyphusAndNotInP10Hash->{'inSisyphusAndNotInP10'},
-        versionSisyphusIsUpper => $versionSisyphusIsUpperHash->{'versionSisyphusIsUpper'},
+        "in" . $secondBranch . "AndNotIn" . $firstBranch => $inSecondBranchAndNotInFirstBranchHash->{"in" . $secondBranch . "AndNotIn" . $firstBranch},
+        "in" . $firstBranch . "AndNotIn" . $secondBranch => $inFirstBranchAndNotInSecondBranchHash->{"in" . $firstBranch . "AndNotIn" . $secondBranch},
+        "version" . $firstBranch . "IsUpper" => $versionFirstBranchIsUpperHash->{"version" . $firstBranch . "IsUpper"},
     );
 
     createJson(\%resultHash);
@@ -81,138 +103,126 @@ sub getAllPackages {
 }
 
 
-sub inP10AndNotInSisyphus {
+sub inSecondBranchAndNotInFirstBranch {
 
-    my %sisyphusPackagesByArch = %{shift()};
-    my %p10PackagesByArch = %{shift()};
+    my %firstBranchPackagesByArch = %{shift()};
+    my %secondBranchPackagesByArch = %{shift()};
+    my $arch = shift();
+    my $firstBranch = shift();
+    my $secondBranch = shift();
 
-    my %groupByAcrch;
-    my %inP10AndNotInSisyphusHash;
+    my %inSecondBranchAndNotInFirstBranchHash;
 
-    foreach my $arch (keys %p10PackagesByArch) {
+    my @newPackageList;
 
-        my @newPackageList;
-        for my $p10Package (@{$p10PackagesByArch{$arch}}) {
+    for my $secondBranchPackage (@{$secondBranchPackagesByArch{$arch}}) {
 
-            my $found = 0;
-            for my $sisyphusPackage (@{$sisyphusPackagesByArch{$arch}}) {
-                if ($sisyphusPackage->{'name'} eq $p10Package->{'name'}) {
-                    $found = 1;
-                    last;
-                }
+        my $found = 0;
+        for my $firstBranchPackage (@{$firstBranchPackagesByArch{$arch}}) {
+            if ($firstBranchPackage->{'name'} eq $secondBranchPackage->{'name'}) {
+                $found = 1;
+                last;
             }
-            if (!($found)) {
-                push @newPackageList, $p10Package;
-            }
-
-        };
-
-        $groupByAcrch{$arch} = \@newPackageList;
-
-    }
-
-    $inP10AndNotInSisyphusHash{'inP10AndNotInSisyphus'} = \%groupByAcrch;
-
-    return \%inP10AndNotInSisyphusHash;
-
-}
-
-
-sub inSisyphusAndNotInP10 {
-
-    my %sisyphusPackagesByArch = %{shift()};
-    my %p10PackagesByArch = %{shift()};
-
-    my %groupByAcrch;
-    my %inSisyphusAndNotInP10Hash;
-
-    foreach my $arch (keys %sisyphusPackagesByArch) {
-
-        my @newPackageList;
-        for my $sisyphusPackage (@{$sisyphusPackagesByArch{$arch}}) {
-
-            my $found = 0;
-            for my $p10Package (@{$p10PackagesByArch{$arch}}) {
-                if ($p10Package->{'name'} eq $sisyphusPackage->{'name'}) {
-                    $found = 1;
-                    last;
-                }
-            }
-
-            if (!($found)) {
-                push @newPackageList, $sisyphusPackage;
-            }
-        };
-
-        $groupByAcrch{$arch} = \@newPackageList;
-
-    };
-
-    $inSisyphusAndNotInP10Hash{'inSisyphusAndNotInP10'} = \%groupByAcrch;
-
-    return \%inSisyphusAndNotInP10Hash;
-
-}
-
-
-sub versionSisyphusIsUpper {
-
-    my %sisyphusPackagesByArch = %{shift()};
-    my %p10PackagesByArch = %{shift()};
-
-    my %groupByAcrch;
-    my %versionSisyphusIsUpperHash;
-
-    foreach my $arch (keys %sisyphusPackagesByArch) {
-
-        my @newPackageList;
-        for my $sisyphusPackage (@{$sisyphusPackagesByArch{$arch}}) {
-
-            my $found = 0;
-            for my $p10Package (@{$p10PackagesByArch{$arch}}) {
-
-                if ($sisyphusPackage->{'name'} eq $p10Package->{'name'}) {
-                    if (compareVersions($sisyphusPackage->{'version'}, $p10Package->{'version'})) {
-                        $found = 1;
-                        last;
-                    };
-                }
-            }
-
-            if ($found) {
-                push @newPackageList, $sisyphusPackage;
-            }
-
+        }
+        if (!($found)) {
+            push @newPackageList, $secondBranchPackage;
         }
 
-        $groupByAcrch{$arch} = \@newPackageList;
+    }
+
+    $inSecondBranchAndNotInFirstBranchHash{"in" . $secondBranch . "AndNotIn" . $firstBranch} = \@newPackageList;
+
+    return \%inSecondBranchAndNotInFirstBranchHash;
+
+}
+
+
+sub inFirstBranchAndNotInSecondBranch {
+
+    my %firstBranchPackagesByArch = %{shift()};
+    my %secondBranchPackagesByArch = %{shift()};
+    my $arch = shift();
+    my $firstBranch = shift();
+    my $secondBranch = shift();
+
+    my %inFirstBranchAndNotInSecondBranchHash;
+
+    my @newPackageList;
+    for my $firstBranchPackage (@{$firstBranchPackagesByArch{$arch}}) {
+
+        my $found = 0;
+        for my $secondBranchPackage (@{$secondBranchPackagesByArch{$arch}}) {
+            if ($secondBranchPackage->{'name'} eq $firstBranchPackage->{'name'}) {
+                $found = 1;
+                last;
+            }
+        }
+
+        if (!($found)) {
+            push @newPackageList, $firstBranchPackage;
+        }
+    }
+
+    $inFirstBranchAndNotInSecondBranchHash{"in" . $firstBranch . "AndNotIn" . $secondBranch} = \@newPackageList;
+
+    return \%inFirstBranchAndNotInSecondBranchHash;
+
+}
+
+
+sub versionFirstBranchIsUpper {
+
+    my %firstBranchPackagesByArch = %{shift()};
+    my %secondBranchPackagesByArch = %{shift()};
+    my $arch = shift();
+    my $firstBranch = shift();
+
+    my %versionFirstBranchIsUpperHash;
+
+    my @newPackageList;
+    for my $firstBranchPackage (@{$firstBranchPackagesByArch{$arch}}) {
+
+        my $found = 0;
+        for my $secondBranchPackage (@{$secondBranchPackagesByArch{$arch}}) {
+
+            if ($firstBranchPackage->{'name'} eq $secondBranchPackage->{'name'}) {
+                if (compareVersions($firstBranchPackage->{'version'}, $secondBranchPackage->{'version'})) {
+                    $found = 1;
+                    last;
+                };
+            }
+        }
+
+        if ($found) {
+            push @newPackageList, $firstBranchPackage;
+        }
 
     }
 
-    $versionSisyphusIsUpperHash{'versionSisyphusIsUpper'} = \%groupByAcrch;
+    $versionFirstBranchIsUpperHash{"version" . $firstBranch . "IsUpper"} = \@newPackageList;
 
-    return \%versionSisyphusIsUpperHash;
+    return \%versionFirstBranchIsUpperHash;
 
 }
 
 
 sub compareVersions {
 
-    my ($sisyphusPackageVersion, $p10PackageVersion) = @_;
+    my ($firstBranchPackageVersion, $secondBranchPackageVersion) = @_;
 
-    my @sisyphusPackageVersionParts = split(/\./, $sisyphusPackageVersion);
-    my @p10PackageVersionParts = split(/\./, $p10PackageVersion);
+    my @firstBranchPackageVersionParts = split(/\./, $firstBranchPackageVersion);
+    my @secondBranchPackageVersionParts = split(/\./, $secondBranchPackageVersion);
 
-    foreach my $index (0 .. $#sisyphusPackageVersionParts) {
+    foreach my $index (0 .. $#firstBranchPackageVersionParts) {
 
-        my $sisyphusPart = $sisyphusPackageVersionParts[$index];
-        my $p10Part = $p10PackageVersionParts[$index];
+        my $firstBranchPart = $firstBranchPackageVersionParts[$index];
+        my $secondBranchPart = $secondBranchPackageVersionParts[$index];
 
-        if (defined $p10Part && defined $sisyphusPart) {
-            $sisyphusPart =~ s/[^0-9]+//g;
-            $p10Part =~ s/[^0-9]+//g;
+        if (defined $secondBranchPart && defined $firstBranchPart) {
+            $firstBranchPart =~ s/[^0-9]+//g;
+            $secondBranchPart =~ s/[^0-9]+//g;
 
-            if ($sisyphusPart gt $p10Part) {
+            if ($firstBranchPart gt $secondBranchPart) {
                 return 1;
             }
         }
